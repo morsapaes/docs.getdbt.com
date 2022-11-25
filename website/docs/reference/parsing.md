@@ -30,7 +30,7 @@ python -c "from yaml import CLoader"
 
 ## Partial parsing
 
-After parsing your project, dbt stores an internal project manifest in a file called `partial_parse.msgpack`. When partial parsing is enabled, dbt will use that internal manifest to determine which files have been changed (if any) since it last parsed the project. Then, it will _only_ parse the changed files, or files related those changes.
+After parsing your project, dbt stores an internal project manifest in a file called `partial_parse.msgpack`. When partial parsing is enabled, dbt will use that internal manifest to determine which files have been changed (if any) since it last parsed the project. Then, it will _only_ parse the changed files, or files related to those changes.
 
 Starting in v1.0, partial parsing is **on** by default. In development, partial parsing can significantly reduce the time spent waiting at the start of a run, which translates to faster dev cycles and iteration.
 
@@ -40,16 +40,14 @@ The [`PARTIAL_PARSE` global config](global-configs#partial-parsing) can be enabl
 
 Parse-time attributes (dependencies, configs, and resource properties) are resolved using the parse-time context. When partial parsing is enabled, and certain context variables change, those attributes will _not_ be re-resolved, and are likely to become stale.
 
-Anything that is re-rendered at execution time, such as model SQL or [nested hooks](dont-nest-your-curlies#an-exception), will always use the latest execution context, and will therefore be correct.
+In particular, you may see **incorrect results** if these attributes depend on "volatile" context variables, such as [`run_started_at`](run_started_at), [`invocation_id`](invocation_id), or [flags](flags). These variables are likely (or even guaranteed!) to change in each invocation. We _highly discourage_ you from using these variables to set parse-time attributes (dependencies, configs, and resource properties).
 
-In particular, you may see **incorrect results** due to:
-- A change in environment variables. Files which depend on [`env_var`](env_var) for parse-time attributes (dependencies and configs) may be incorrect in subsequent parses/invocations if env vars have changed.
-- "Volatile" Jinja variables, such as [`run_started_at`](run_started_at), [`invocation_id`](invocation_id), or [flags](flags), that are likely (or guaranteed!) to change in each invocation. We _highly discourage_ you from using these variables to set parse-time attributes (dependencies, configs, and resource properties).
+Starting in v1.0, dbt _will_ detect changes in environment variables. It will selectively re-parse only the files that depend on that [`env_var`](env_var) value. (If the env var is used in `profiles.yml` or `dbt_project.yml`, a full re-parse is needed.) However, dbt will _not_ re-render **descriptions** that include env vars. If your descriptions include frequently changing env vars (this is highly uncommon), we recommend that you fully re-parse when generating documentation: `dbt --no-partial-parse docs generate`.
 
-If certain inputs change between runs, dbt will trigger a full re-parse. The results will be correct but **slow**. Today those inputs are:
+If certain inputs change between runs, dbt will trigger a full re-parse. The results will be correct, but the full re-parse may be quite slow. Today those inputs are:
 - `--vars`
-- `profiles.yml` content
-- `dbt_project.yml` content
+- `profiles.yml` content (or `env_var` values used within)
+- `dbt_project.yml` content (or `env_var` values used within)
 - installed packages
 - dbt version
 - certain widely-used macros, e.g. [builtins](builtins) overrides or `generate_x_name` for `database`/`schema`/`alias`
@@ -58,7 +56,7 @@ If you ever get into a bad state, you can disable partial parsing and trigger a 
 
 ## Static parser
 
-At parse time, dbt needs to extract the contents of `ref()`, `source()`, and `config()` from all models in the project. Traditionally, dbt has extracted those values by rendering the Jinja in every model file, which can be slow. In v0.20, we introduced a new way to statically analyze model files, leveraging [`tree-sitter`](https://github.com/tree-sitter/tree-sitter), which we're calling an "experimental parser". You can see the code for an initial Jinja2 grammar [here](https://github.com/fishtown-analytics/tree-sitter-jinja2).
+At parse time, dbt needs to extract the contents of `ref()`, `source()`, and `config()` from all models in the project. Traditionally, dbt has extracted those values by rendering the Jinja in every model file, which can be slow. In v0.20, we introduced a new way to statically analyze model files, leveraging [`tree-sitter`](https://github.com/tree-sitter/tree-sitter), which we're calling an "experimental parser". You can see the code for an initial Jinja2 grammar [here](https://github.com/dbt-labs/tree-sitter-jinja2).
 
 Starting in v1.0, the experimental parser is **on** by default. We believe it can offer *some* speedup to 95% of projects. You may optionally turn it off using the [`STATIC_PARSER` global config](global-configs#static-parser).
 
